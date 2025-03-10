@@ -44,4 +44,9 @@ pkill -f "airflow webserver"
 pkill -f "airflow scheduler"
 pkill -f airflow
 
+cd ~/airflow
+source airflow-env/bin/activate
+ls ~/airflow/airflow-env
+echo $AIRFLOW_HOME
+airflow scheduler
 
