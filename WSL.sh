@@ -49,4 +49,7 @@ source airflow-env/bin/activate
 ls ~/airflow/airflow-env
 echo $AIRFLOW_HOME
 airflow scheduler
+airflow webserver -D
+airflow scheduler -D
+
 
