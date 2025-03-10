@@ -1,59 +1,56 @@
-echo Hello, Linux!
-
+# Step 1: Install WSL and Update Packages
+echo " Installing WSL and required dependencies..."
 wsl --install
-
-#필수 패키지 업데이트 및 설치
-sudo apt update
-sudo apt upgrade -y
+sudo apt update && sudo apt upgrade -y
 sudo apt install python3 python3-pip python3-venv -y
 
-#Airflow wjsdyd 가상환경 생
-mkdir ~/airflow
+# Step 2: Create Airflow Virtual Environment
+echo " Setting up the Airflow environment..."
+mkdir -p ~/airflow
 cd ~/airflow
 python3 -m venv airflow-env
 source airflow-env/bin/activate
 
-#Airflow 설치
+# Step 3: Install Apache Airflow
+echo " Installing Apache Airflow..."
+pip install --upgrade pip
 pip install "apache-airflow==2.7.3" --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-3.8.txt"
 
-#환경 변수 설정
+# Step 4: Set Environment Variables (Persistent)
+echo " Configuring Airflow environment variables..."
 export AIRFLOW_HOME=~/airflow
+echo 'export AIRFLOW_HOME=~/airflow' >> ~/.bashrc
+source ~/.bashrc
 
-Airflow 데이터베이스 초기화
+# Step 5: Initialize Airflow Database
+echo " Initializing Airflow database..."
 airflow db init
 
-#Airflow 웹 서버 실행
-airflow webserver --port 8080
+# Step 6: Create Airflow Admin User
+echo " Creating an admin user for Airflow..."
+airflow users create \
+    --username admin \
+    --password admin \
+    --firstname Admin \
+    --lastname User \
+    --role Admin \
+    --email admin@example.com
 
-Airflow 스케줄러 실행
-airflow scheduler
+# Step 7: Start Airflow Webserver & Scheduler
+echo " Starting Airflow services..."
+airflow webserver --port 8080 -D
+airflow scheduler -D
 
-#password reset
-wsl -u root
+# Step 8: Create DAGs Directory and Open nano Editor for DAG Creation
+echo " Setting up DAGs directory..."
+mkdir -p ~/airflow/dags
+nano ~/airflow/dags/my_first_etl_dag.py  # Open nano editor for DAG script
 
-#passwd username
+# Step 9: Check Running Airflow Processes
+echo " Checking running Airflow processes..."
+ps aux | grep airflow
 
-exit
-
-#sudo apt install python3 python3-pip python3-venv -y
-
-
-setx AIRFLOW_HOME "C:\Airflow"
-echo $env:AIRFLOW_HOME
-$env:AIRFLOW_HOME="C:\Airflow" 만약 powershell을 시작했는데도 airflow_home이 인식되지 않는다면 가상환경 내에서 직접 환경변수를 설정해야합니
-
-
-airflow_home을 가상환 경내에서 영구적으로 설정하는 방법 
-cd C:\Airflow\myenv
-notepad Scripts\activate.bat
-set AIRFLOW_HOME=C:\Airflow(파일 맨 아래에 추가)
-myenv\Scirpts\activate
-echo $env:AIRFLOW_HOME
+echo " Apache Airflow installation and setup completed! 🎉"
+echo " Access Airflow Web UI: http://localhost:8080"
 
 
-airflow db init
-airflow webserver --port 8080
-airflow scheduler
-
-airflow dags list
-airflow dags trigger my-first-python-etl-dag
