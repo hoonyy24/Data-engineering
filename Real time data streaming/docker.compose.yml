@@ -1,0 +1,334 @@
+version: '3'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    # Use Docker image confluentinc/cp-zookeeper:7.4.0, 
+    # which contains all necessary files to run Zookeeper
+    hostname: zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ['CMD', 'bash', '-c', "echo 'ruok' | nc localhost 2181"]
+      # 1. echo 'ruok' → Sends a message ("Are You OK?") to Zookeeper
+      # 2. nc localhost 2181 → Sends the message via network to Zookeeper's port 2181
+      # 3. Zookeeper normally responds with "imok" ("I'm OK") if healthy
+      # 4. Container is considered healthy if response is "imok"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - confluent
+
+# This docker-compose.yml configuration defines the Zookeeper container required to run Kafka.
+# Container image → Installation package for the application (similar to .exe files)
+# Container → An actively running application instance based on the container image
+# networks: confluent → Ensures that Kafka, Zookeeper, Schema Registry, etc., can communicate effectively within the same network environment.
+
+  broker:
+   image: confluentinc/cp-server:7.4.0
+   hostname: broker
+   container_name: broker
+   depends_on:
+    zookeeper:
+      condition: service_healthy
+      # Kafka broker will only start after Zookeeper is confirmed healthy
+   ports:
+    - "9092:9092"
+    - "9101:9101"
+  environment:
+    KAFKA_BROKER_ID: 1
+    # Unique ID for each Kafka broker in a cluster. Set to 1 for single-broker setups.
+    KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+    # Defines Kafka broker's security protocol. PLAINTEXT means no encryption (default setting).
+    KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092
+    # PLAINTEXT://broker:29092 → internal container network communication.
+    # PLAINTEXT_HOST://localhost:9092 → access from the local host machine.
+    KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
+    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    # Sets the replication factor for the internal Kafka topic '__consumer_offsets' which stores consumer offsets.
+    # '__consumer_offsets' topic stores metadata indicating consumer reading positions rather than actual user data.
+    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    # Defines the initial delay (in milliseconds) before consumer groups rebalance when first started.
+    KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
+    KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
+    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    # Kafka transaction log storage settings.
+    KAFKA_JMX_PORT: 9101
+    KAFKA_JMX_HOSTNAME: localhost
+    # Kafka broker's JMX (Java Management Extensions) port setting.
+    # JMX is used for monitoring internal metrics and performance.
+    # If port 9101 is exposed, external applications can access Kafka metrics.
+    # Set to 'localhost' for local monitoring; use server IP if remote monitoring is needed.
+    KAFKA_CONFLUENT_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+    # Defines Kafka Schema Registry address. Schema Registry manages schemas for Kafka messages (JSON, Avro, Protobuf).
+    CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: broker:29092
+    # Kafka server address for metrics reporting.
+    # broker:29092 → directly communicates metrics to the Kafka broker within the network.
+    CONFLUENT_METRICS_REPORTER_TOPIC_REPLICAS: 1
+    # Sets the replication factor for internal topic storing Kafka metrics.
+    # Recommended to use at least 3 for multi-broker setups.
+    CONFLUENT_METRICS_ENABLE: 'false'
+    # Enables ('true') or disables ('false') Kafka metrics collection in Confluent Control Center.
+    CONFLUENT_SUPPORT_CUSTOMER_ID: 'anonymous'
+    # Customer ID for Confluent Enterprise license. Set as 'anonymous' for free/trial version.
+  networks:
+    - confluent
+  healthcheck:
+    test: [ "CMD", "bash", "-c", 'nc -z localhost 9092' ]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+
+# Kafka Key Concepts:
+# - Topic → logical channel or storage unit for messages (e.g., user_logs, payment_data).
+# - Partition → each topic is divided into smaller segments for distributed storage.
+# - Offset → unique sequential number indicating the position of each message in a partition.
+# Consumer reading positions (offsets) are stored in '__consumer_offsets' internal topic.
+
+schema-registry:
+  image: confluentinc/cp-schema-registry:7.4.0
+  hostname: schema-registry
+  container_name: schema-registry
+  depends_on:
+    broker:
+      condition: service_healthy
+    # Schema Registry will start only after Kafka broker is confirmed healthy.
+  ports:
+    - "8081:8081"
+  environment:
+    SCHEMA_REGISTRY_HOST_NAME: schema-registry
+    # Sets the hostname of Schema Registry container.
+    SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'broker:29092'
+    # Defines the Kafka broker address for Schema Registry to store schemas.
+    SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    # Schema Registry listens for HTTP requests on port 8081 (accessible from any IP address).
+  networks:
+    - confluent
+  healthcheck:
+    test: [ "CMD", "curl", "-f", "http://localhost:8081/" ]
+    # '-f' (--fail) option: If HTTP request fails (status 404, 500, etc.), curl returns an error without output.
+    interval: 30s
+    timeout: 10s
+    retries: 5
+
+# Schema Registry → manages Kafka data schemas.
+# Container Image → includes the program and complete runtime environment (similar to an installation file).
+# Container → an actively running instance of the application created from the image.
+
+  control-center:
+  # UI-based management tool to create, delete, configure, and monitor Kafka topics
+    image: confluentinc/cp-enterprise-control-center:7.4.0
+    hostname: control-center
+    container_name: control-center
+    depends_on:
+      broker:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+    ports:
+      - "9021:9021"
+    environment:
+      CONTROL_CENTER_BOOTSTRAP_SERVERS: 'broker:29092'
+      # Connect Control Center to Kafka broker at broker:29092
+      CONTROL_CENTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
+      # Connect Control Center to Schema Registry service at port 8081
+      CONTROL_CENTER_REPLICATION_FACTOR: 1
+      # Replication factor for Control Center's internal Kafka topics (set higher in production)
+      CONTROL_CENTER_INTERNAL_TOPICS_PARTITIONS: 1
+      # Number of partitions for internal Control Center topics
+      CONTROL_CENTER_MONITORING_INTERCEPTOR_TOPIC_PARTITIONS: 1
+      # Number of partitions for Kafka monitoring interceptor topics
+      CONFLUENT_METRICS_TOPIC_REPLICATION: 1
+      # Replication factor for Kafka metrics topic
+      CONFLUENT_METRICS_ENABLE: 'false'
+      # Disable Confluent metrics data collection (set to 'true' to enable)
+      PORT: 9021
+    networks:
+      - confluent
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9021/health"]
+      # Executes HTTP health check directly; -f (--fail) option means it returns an error if the request fails (e.g., 404 or 500 error).
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  webserver:
+    image: apache/airflow:2.6.0-python3.9
+    command: webserver
+    entrypoint: ['/opt/airflow/script/entrypoint.sh']
+    # Executes entrypoint script to initialize the Airflow environment
+    depends_on:
+      - postgres
+    environment:
+      - LOAD_EX=n
+        # Disable loading Airflow example DAGs (n = disable)
+      - EXECUTOR=Sequential
+        # Specifies the Airflow executor type (SequentialExecutor)
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+        # PostgreSQL database connection string for Airflow metadata database
+      - AIRFLOW_WEBSERVER_SECRET_KEY=Secured_key
+        # Secret key for securing Airflow Webserver
+    logging:
+      options:
+        max-size: 10m
+          # Limit log file size to 10MB per file
+        max-file: "3"
+          # Keep a maximum of 3 log files (older logs are deleted automatically)
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./script/entrypoint.sh:/opt/airflow/script/entrypoint.sh
+      - ./requirements.txt:/opt/airflow/requirements.txt
+      # Maps local directories/files into the Airflow container for DAGs, entrypoint script, and additional Python packages
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ['CMD-SHELL', "[ -f /opt/airflow/airflow-webserver.pid ]"]
+      # CMD-SHELL checks if Airflow's webserver PID file exists, confirming webserver process is running properly
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    networks:
+      - confluent
+
+  scheduler:
+    image: apache/airflow:2.6.0-python3.9
+    depends_on:
+      webserver:
+        condition: service_healthy
+        # Scheduler starts only after Airflow Webserver is confirmed healthy
+    volumes:
+      # Volumes allow files to be "mounted" or shared, rather than copied
+      - ./dags:/opt/airflow/dags
+        # Mounts the local ./dags folder to the container's /opt/airflow/dags directory
+      - ./script/entrypoint.sh:/opt/airflow/script/entrypoint.sh
+        # Mounts local entrypoint script to the container
+      - ./requirements.txt:/opt/airflow/requirements.txt
+        # Mounts the local requirements.txt for automatic package installation
+        # Running "pip install -r /opt/airflow/requirements.txt" installs all Python packages listed
+   
+    environment:
+      - LOAD_EX=n
+        # Prevents Airflow from loading example DAGs
+      - EXECUTOR=Sequential
+        # Specifies the SequentialExecutor for task execution
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+        # Connection string to PostgreSQL database used by Airflow
+      - AIRFLOW_WEBSERVER_SECRET_KEY=this_is_a_very_secured_key
+        # Secret key used for Airflow webserver security
+    command: bash -c "pip install -r ./requirements.txt && airflow db upgrade && airflow scheduler"
+      # Installs Python packages, updates the Airflow database schema, then runs the Airflow scheduler
+    networks:
+      - confluent
+
+  postgres:
+    image: postgres:14.0
+    environment:
+      - POSTGRES_USER=airflow
+        # Database username set to 'airflow'
+      - POSTGRES_PASSWORD=airflow
+        # Password for PostgreSQL user
+      - POSTGRES_DB=airflow
+        # Creates a PostgreSQL database named 'airflow'
+    logging:
+      options:
+        max-size: 10m
+          # Maximum log file size set to 10 MB
+        max-file: "3"
+          # Keeps up to 3 log files, automatically deleting old ones
+    networks:
+      - confluent
+
+  spark-master:
+    image: bitnami/spark:latest
+    command: bin/spark-class org.apache.spark.deploy.master.Master
+      # Runs the Spark Master process
+    ports:
+      - "9090:8080"
+      - "7077:7077"
+    networks:
+      - confluent
+
+  spark-worker:
+    image: bitnami/spark:latest
+    command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+      # Spark Worker process that connects to the Spark Master
+    depends_on:
+      - spark-master
+        # Ensures Spark Master starts before Worker
+    environment:
+      SPARK_MODE: worker
+      SPARK_WORKER_CORES: 2
+        # Number of CPU cores allocated to Spark Worker (2 cores)
+      SPARK_WORKER_MEMORY: 1g
+        # Memory allocated to Spark Worker (1GB)
+      SPARK_MASTER_URL: spark://spark-master:7077
+        # Address of the Spark Master node
+    networks:
+      - confluent
+
+  cassandra_db:
+    image: cassandra:latest
+    container_name: cassandra
+    hostname: cassandra
+    ports:
+      - "9042:9042"
+    environment:
+      - MAX_HEAP_SIZE=512M
+        # Maximum heap size for JVM (Java Virtual Machine)
+      - HEAP_NEWSIZE=100M
+        # Memory allocated for new objects within the JVM heap
+      - CASSANDRA_USERNAME=cassandra
+      - CASSANDRA_PASSWORD=cassandra
+    networks:
+      - confluent
+    # Heap Size refers to the memory space that the JVM (Java Virtual Machine) can utilize.
+    # Cassandra is a distributed NoSQL database designed for high write performance and high availability.
+
+networks:
+  confluent:
+    # The 'confluent' network allows seamless communication among containers like Kafka, Zookeeper, Schema Registry, Spark, Cassandra, and Airflow.
+
+    
+#Kafka Key Components and Roles
+
+#Producer:Generates data and sends it to the Kafka broker (server).
+
+#Broker: Stores and manages received data and provides it when needed.
+
+#Topic: A message queue (buffer) where data is stored and categorized.
+
+#Consumer: Retrieves data from the broker and processes it.
+
+#Zookeeper (Manager):Manages the Kafka cluster (optional since Kafka 3.3).
+
+
+# Roles and Responsibilities
+
+#1.Kafka Broker Metadata Management:Maintains the list of Kafka brokers in the cluster.
+
+#2.Leader Election Determines the leader broker in Kafka.
+
+#3.Configuration Change Detection:Detects the addition/removal of nodes within the cluster.
+
+#4.Health Monitoring:Checks if each Kafka broker is operating correctly.
+
+#5.Consumer Group Offset Management:Tracks the last read message position of consumer groups.
+
+
+#Kafka Core Concepts
+
+#Topic:A logical unit where data is stored (e.g., `user_logs`, `payment_data`).
+
+#Partition:Divides a topic into multiple smaller units for scalability.
+
+#Offset:A unique ID assigned to each message in a partition.
+
+#Rebalance:Occurs when a new consumer joins, an existing consumer leaves, or a broker fails.Redistributes partition ownership among consumers.
+
