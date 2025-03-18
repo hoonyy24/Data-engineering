@@ -52,4 +52,5 @@ airflow scheduler
 airflow webserver -D
 airflow scheduler -D
 
+ sudo rm -r script
 
