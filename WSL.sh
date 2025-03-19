@@ -52,5 +52,8 @@ airflow scheduler
 airflow webserver -D
 airflow scheduler -D
 
- sudo rm -r script
+sudo rm -r script
+
+#JAVA install
+sudo apt update && sudo apt install openjdk-11-jdk -y
 
