@@ -54,6 +54,23 @@ airflow scheduler -D
 
 sudo rm -r script
 
-#JAVA install
+#JAVA installation
 sudo apt update && sudo apt install openjdk-11-jdk -y
+
+#JAVA find the java installation path
+readlink -f $(which java)
+
+# Open the bash profile configuration file:
+nano ~/.bashrc 
+
+# Add the following lines at the bottom of the file:
+export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+export PATH=$JAVA_HOME/bin:$PATH
+
+# Apply the changes:
+source ~/.bashrc 
+
+# Verify that JAVA_HOME is set correctly:
+echo $JAVA_HOME
+
 
